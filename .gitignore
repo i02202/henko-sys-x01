@@ -1,0 +1,49 @@
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Build
+dist/
+build/
+*.egg-info/
+
+# Docker volumes
+docker-data/
+appwrite-data/
+posthog-data/
+
+# Ollama models (too large)
+models/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# PGO data
+*.gcda
+*.gcno
+*.profraw
+*.profdata
+
+# Secrets
+secrets/
+*.key
+*.pem
