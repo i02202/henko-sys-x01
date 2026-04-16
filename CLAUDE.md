@@ -36,15 +36,24 @@ LAYER 0: INFRASTRUCTURE → Appwrite + Dokploy + PostHog + n8n + Inngest
 - Content generation (briefings, newsletters, social)
 - RAG over persistent knowledge base
 
-## Sovereign Model Pool (Local, Zero API Cost)
-- **DeepSeek-R1 671B** — reasoning (CPU+RAM offload, needs cluster for full)
-- **GLM-5.1** — coding agentic (#1 SWE-Bench Pro, via Ollama)
-- **Gemma 4 E4B** — multimodal, lightweight (fits 8GB VRAM)
-- **Gemma 3 12B** — already installed, proven
-- **Qwen 3 32B** — already installed, strong reasoning
-- **Qwen 3 8B** — fast inference, good for simple tasks
-- **Gemini Agent Mode** — free cloud fallback for research
-- **Claude / GPT** — cloud fallback for complex reasoning
+## Model Pool
+
+### Tier 1: Local Models (Zero API Cost, Sovereign)
+- **Gemma 4 E4B** — multimodal, lightweight (fits 8GB VRAM) — DOWNLOADING
+- **Gemma 3 12B** — already installed, proven general-purpose
+- **Qwen 3 32B** — already installed (20GB), strong reasoning + coding
+- **Qwen 3 8B** — fast inference, good for simple/routing tasks
+- **nomic-embed-text** — embeddings for RAG (274MB, installed)
+
+### Tier 2: Cloud Models (Free or Low Cost)
+- **GLM-5.1:cloud** — #1 SWE-Bench Pro coding agent (via `ollama run glm-5.1:cloud`, NOT local)
+- **Gemini Agent Mode** — free research/automation via Google
+- **Google Stitch 2.0** — free design generation
+
+### Tier 3: Cloud Models (Paid, Fallback)
+- **Claude** — complex reasoning, Claude Code Teams
+- **GPT** — alternative for specific tasks
+- **DeepSeek-R1 API** — reasoning (local 671B requires multi-node cluster, not feasible on single machine)
 
 ## Automation Layer
 - **Claude Code Routines** — scheduled/webhook/API triggered tasks on Anthropic cloud
