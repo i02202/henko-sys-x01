@@ -51,6 +51,7 @@ LAYER 0: INFRASTRUCTURE → n8n + Appwrite + Dokploy + PostHog + Inngest
 | **n8n** | `localhost:5678` | ✅ Running (Docker) | Workflow automation UI |
 | **Ollama** | `localhost:11434` | ✅ Running | 6 local models |
 | **Ubuntu WSL2** | — | ✅ Installed | Mirrored networking enabled |
+| **Hermes Agent** | WSL2 CLI | ✅ Running | `hermes chat` in Ubuntu shell |
 
 ### Port Map (avoid conflicts)
 - `:2026` — DeerFlow (nginx proxy)
@@ -157,12 +158,21 @@ Pre-existing projects (ftpa-expert on :3000, worldstation on :3100) use these po
 - [x] Ubuntu WSL2 with mirrored networking
 - [x] Fix nginx path mangling bug
 - [x] Fix curl/curl.exe routing issue
-- [ ] Hermes Agent setup in WSL2
+- [x] Hermes Agent setup in WSL2 (connected to Ollama qwen3:8b, verified)
 - [ ] Paperclip setup + Hermes adapter
 - [ ] Integration smoke test
 - [ ] Appwrite instance (Phase 1b)
 - [ ] PostHog analytics (Phase 1b)
 - [ ] Dokploy self-hosted deploy (Phase 1b)
+
+### Hermes Agent Configuration (Critical Discovery)
+The provider resolver in Hermes v0.9.0 has a subtle bug: `provider: "ollama"` in config.yaml maps to "custom" during normalization but the custom-provider resolver requires a prefix like `custom:local`. The fix is to use `provider: "custom"` directly with explicit `base_url: "http://localhost:11434/v1"`.
+
+Also required:
+- `context_length: 65536` override in config.yaml (Hermes minimum is 64K, qwen3:8b native is 40K)
+- Fake API keys in `~/.hermes/.env` (OpenAI SDK requires SOME key even for local)
+
+See: `infrastructure/scripts/setup-hermes.sh` for reproducible setup.
 
 ### Phase 2: INTEL MVP (2 weeks)
 - Research agent with RAG
