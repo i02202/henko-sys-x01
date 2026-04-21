@@ -164,8 +164,10 @@ Pre-existing projects (ftpa-expert on :3000, worldstation on :3100) use these po
 - [x] hermes_local adapter verified as builtin in Paperclip (no manual registration needed)
 - [x] **3 Henko agents created via Paperclip API**: INTEL Researcher (qwen3:8b),
   FORGE Engineer (qwen3:32b), ALPHA Trader (qwen3:8b)
-- [ ] Smoke test — `hermes` CLI not in daniel's PATH (needs Hermes install as daniel user)
-- [ ] Integration smoke test (after Hermes install fix)
+- [x] Hermes Agent v0.10.0 reinstalled as daniel user (separate from root install)
+- [x] Hermes config copied + auxiliary models override (compression/vision/web_extract)
+- [x] **Integration smoke test PASSED** — INTEL Researcher woke up, ran 5m13s, exit 0
+- [x] **Phase 1 COMPLETE — Henko Sys x01 is operational**
 
 ## Henko Agent Team (Initial Roster)
 
@@ -178,6 +180,25 @@ Company: "Henko Sys x01" (id: `770e612d-18f1-4f6e-acb5-2b621914ef21`)
 | 🎯 ALPHA Trader (`alpha-trader`) | general | qwen3:8b | terminal, file, web |
 
 Reproducible script: `infrastructure/scripts/create-henko-agents.sh`
+
+## Smoke Test Results (2026-04-21)
+
+First successful agent run:
+- Agent: INTEL Researcher (`0e7497fe-2a86-452f-bfa4-8c060c0e5223`)
+- Run ID: `ec30a16e-69a2-4079-99f8-b5d455b14c3c`
+- Status: succeeded (exit 0)
+- Duration: 5m 13s
+- Model: qwen3:8b via Ollama (custom provider)
+- Response: Agent correctly recognized Paperclip employee context, checked
+  inbox/backlog, found no assigned issues, reported back. Confirms full
+  autonomous loop: Paperclip → hermes_local adapter → Hermes CLI → Ollama
+  → response → Paperclip log capture.
+
+### Performance Notes
+- First agent run took ~5 min due to model loading + skill initialization
+- Workaround: pre-warm Ollama with `keep_alive: "30m"` parameter
+- Agent timeout configured at 900s (default 300s was too short)
+- Per-message latency drops significantly after first run (model stays in VRAM)
 - [ ] Appwrite instance (Phase 1b)
 - [ ] PostHog analytics (Phase 1b)
 - [ ] Dokploy self-hosted deploy (Phase 1b)
