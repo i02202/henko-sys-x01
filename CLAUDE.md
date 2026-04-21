@@ -162,8 +162,22 @@ Pre-existing projects (ftpa-expert on :3000, worldstation on :3100) use these po
 - [x] Hermes Agent setup in WSL2 (connected to Ollama qwen3:8b, verified)
 - [x] Paperclip setup in WSL2 (v2026.416.0, runs as daniel user, not root)
 - [x] hermes_local adapter verified as builtin in Paperclip (no manual registration needed)
-- [ ] Create first Hermes employee in Paperclip UI
-- [ ] Integration smoke test
+- [x] **3 Henko agents created via Paperclip API**: INTEL Researcher (qwen3:8b),
+  FORGE Engineer (qwen3:32b), ALPHA Trader (qwen3:8b)
+- [ ] Smoke test — `hermes` CLI not in daniel's PATH (needs Hermes install as daniel user)
+- [ ] Integration smoke test (after Hermes install fix)
+
+## Henko Agent Team (Initial Roster)
+
+Company: "Henko Sys x01" (id: `770e612d-18f1-4f6e-acb5-2b621914ef21`)
+
+| Agent | Role | Model | Toolsets |
+|-------|------|-------|----------|
+| 🔭 INTEL Researcher (`intel-researcher`) | researcher | qwen3:8b | terminal, file, web |
+| 💻 FORGE Engineer (`forge-engineer`) | engineer | qwen3:32b | terminal, file, web, code_execution |
+| 🎯 ALPHA Trader (`alpha-trader`) | general | qwen3:8b | terminal, file, web |
+
+Reproducible script: `infrastructure/scripts/create-henko-agents.sh`
 - [ ] Appwrite instance (Phase 1b)
 - [ ] PostHog analytics (Phase 1b)
 - [ ] Dokploy self-hosted deploy (Phase 1b)
