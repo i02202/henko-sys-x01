@@ -52,6 +52,7 @@ LAYER 0: INFRASTRUCTURE → n8n + Appwrite + Dokploy + PostHog + Inngest
 | **Ollama** | `localhost:11434` | ✅ Running | 6 local models |
 | **Ubuntu WSL2** | — | ✅ Installed | Mirrored networking enabled |
 | **Hermes Agent** | WSL2 CLI | ✅ Running | `hermes chat` in Ubuntu shell |
+| **Paperclip** | `localhost:3100` | ✅ Running (WSL2) | AI Company OS, UI + API |
 
 ### Port Map (avoid conflicts)
 - `:2026` — DeerFlow (nginx proxy)
@@ -159,7 +160,9 @@ Pre-existing projects (ftpa-expert on :3000, worldstation on :3100) use these po
 - [x] Fix nginx path mangling bug
 - [x] Fix curl/curl.exe routing issue
 - [x] Hermes Agent setup in WSL2 (connected to Ollama qwen3:8b, verified)
-- [ ] Paperclip setup + Hermes adapter
+- [x] Paperclip setup in WSL2 (v2026.416.0, runs as daniel user, not root)
+- [x] hermes_local adapter verified as builtin in Paperclip (no manual registration needed)
+- [ ] Create first Hermes employee in Paperclip UI
 - [ ] Integration smoke test
 - [ ] Appwrite instance (Phase 1b)
 - [ ] PostHog analytics (Phase 1b)
@@ -173,6 +176,20 @@ Also required:
 - Fake API keys in `~/.hermes/.env` (OpenAI SDK requires SOME key even for local)
 
 See: `infrastructure/scripts/setup-hermes.sh` for reproducible setup.
+
+### Paperclip Setup Notes (Critical Discoveries)
+- **Cannot run as root** — embedded PostgreSQL refuses root. Create a non-root user first:
+  `useradd -m -s /bin/bash daniel && usermod -aG sudo daniel`
+- **`hermes_local` adapter is builtin** in Paperclip 2026.416.0 — no need to install
+  `hermes-paperclip-adapter` separately (docs from NousResearch adapter repo are outdated).
+- **Builtin adapters available**: claude_local, codex_local, cursor, gemini_local,
+  hermes_local, http, openclaw_gateway, opencode_local, pi_local, process.
+- **Must run in same environment as Hermes CLI** — `hermes_local` spawns Hermes as
+  child process, not over network. Paperclip must run in WSL2 alongside Hermes.
+- **Port 3100 shared with Windows** (mirrored networking) — conflicts with any Windows
+  host process on 3100 (e.g., Docker containers mapped to 3100).
+
+See: `infrastructure/scripts/setup-paperclip.sh` for reproducible setup.
 
 ### Phase 2: INTEL MVP (2 weeks)
 - Research agent with RAG
