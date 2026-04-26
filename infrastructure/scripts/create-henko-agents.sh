@@ -63,8 +63,11 @@ $CURL -s -X POST -H "Content-Type: application/json" -d '{
 }' "$PAPERCLIP_URL/api/companies/$COMPANY_ID/agents" | python3 -c "import json,sys;a=json.load(sys.stdin);print(f'  ✓ {a[\"name\"]} ({a[\"urlKey\"]}) — {a[\"id\"]}')"
 
 # 3. Create FORGE Engineer
+#    NOTE: Uses gemma4:e4b (~7GB Q4) — fits 8GB VRAM completely. qwen3:32b
+#    was tested but times out on this hardware (60% CPU offload kills latency).
+#    See CLAUDE.md "Hardware-Aware Model Selection" for details.
 echo ""
-echo "💻 Creating FORGE Engineer (qwen3:32b, engineer)..."
+echo "💻 Creating FORGE Engineer (gemma4:e4b, engineer)..."
 $CURL -s -X POST -H "Content-Type: application/json" -d '{
   "name": "FORGE Engineer",
   "role": "engineer",
@@ -73,11 +76,11 @@ $CURL -s -X POST -H "Content-Type: application/json" -d '{
   "capabilities": "Implements features using BMAD methodology (Analysis/Planning/Solutioning/Implementation), builds apps with Next.js, writes tests, deploys via Dokploy",
   "adapterType": "hermes_local",
   "adapterConfig": {
-    "model": "qwen3:32b",
+    "model": "gemma4:e4b",
     "provider": "custom",
     "baseUrl": "http://localhost:11434/v1",
-    "maxIterations": 100,
-    "timeoutSec": 600,
+    "maxIterations": 50,
+    "timeoutSec": 900,
     "persistSession": true,
     "enabledToolsets": ["terminal", "file", "web", "code_execution"]
   }

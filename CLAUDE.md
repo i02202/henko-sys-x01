@@ -152,7 +152,7 @@ Pre-existing projects (ftpa-expert on :3000, worldstation on :3100) use these po
 
 ## Implementation Phases
 
-### Phase 1: Foundation (2-3 weeks) — IN PROGRESS
+### Phase 1: Foundation — ✅ COMPLETE (2026-04-26)
 - [x] Ollama model pool (6 models including Gemma 4)
 - [x] DeerFlow 2.0 setup with Ollama integration (Docker, gateway mode)
 - [x] n8n workflow automation (Docker)
@@ -163,23 +163,61 @@ Pre-existing projects (ftpa-expert on :3000, worldstation on :3100) use these po
 - [x] Paperclip setup in WSL2 (v2026.416.0, runs as daniel user, not root)
 - [x] hermes_local adapter verified as builtin in Paperclip (no manual registration needed)
 - [x] **3 Henko agents created via Paperclip API**: INTEL Researcher (qwen3:8b),
-  FORGE Engineer (qwen3:32b), ALPHA Trader (qwen3:8b)
+  FORGE Engineer (gemma4:e4b — empirically validated; qwen3:32b unviable),
+  ALPHA Trader (qwen3:8b)
 - [x] Hermes Agent v0.10.0 reinstalled as daniel user (separate from root install)
 - [x] Hermes config copied + auxiliary models override (compression/vision/web_extract)
 - [x] **Integration smoke test PASSED** — INTEL Researcher woke up, ran 5m13s, exit 0
+- [x] **Real-task smoke test PASSED** — FORGE wrote `/home/daniel/forge-smoke-test.py`
+  with `print('FORGE_OK')` from a real Paperclip issue (`640d71c3`)
+- [x] systemd auto-start for Paperclip (resilient to WSL2/Docker restarts)
 - [x] **Phase 1 COMPLETE — Henko Sys x01 is operational**
 
 ## Henko Agent Team (Initial Roster)
 
-Company: "Henko Sys x01" (id: `770e612d-18f1-4f6e-acb5-2b621914ef21`)
+**Company:** "Henko Sys x01"
+**Company ID:** `770e612d-18f1-4f6e-acb5-2b621914ef21`
 
-| Agent | Role | Model | Toolsets |
-|-------|------|-------|----------|
-| 🔭 INTEL Researcher (`intel-researcher`) | researcher | qwen3:8b | terminal, file, web |
-| 💻 FORGE Engineer (`forge-engineer`) | engineer | qwen3:32b | terminal, file, web, code_execution |
-| 🎯 ALPHA Trader (`alpha-trader`) | general | qwen3:8b | terminal, file, web |
+| Agent | Role | Model | Agent ID | URL slug |
+|-------|------|-------|----------|----------|
+| 🔭 INTEL Researcher | researcher | qwen3:8b | `0e7497fe-2a86-452f-bfa4-8c060c0e5223` | `/intel-researcher` |
+| 💻 FORGE Engineer | engineer | gemma4:e4b | `429a17bb-7922-4759-99e5-c56aeb9d5127` | `/forge-engineer` |
+| 🎯 ALPHA Trader | general | qwen3:8b | `97c1bcd4-ec02-4742-bc9f-ef243b7227c3` | `/alpha-trader` |
+
+All agents use `hermes_local` adapter → Ollama via `provider: custom` + `baseUrl: http://localhost:11434/v1`.
 
 Reproducible script: `infrastructure/scripts/create-henko-agents.sh`
+
+### Working with agents — quick reference
+
+```bash
+# 1. Create an issue assigned to an agent
+curl.exe -s -X POST -H "Content-Type: application/json" -d '{
+  "title": "your task title",
+  "description": "exact instructions for the agent",
+  "status": "todo",
+  "priority": "high",
+  "assigneeAgentId": "<AGENT_ID>"
+}' "http://localhost:3100/api/companies/770e612d-18f1-4f6e-acb5-2b621914ef21/issues"
+
+# 2. Wake the agent (empty body — agent reads its inbox)
+curl.exe -s -X POST -H "Content-Type: application/json" -d "{}" \
+  "http://localhost:3100/api/agents/<AGENT_ID>/wakeup"
+
+# 3. Watch the run
+curl.exe -s "http://localhost:3100/api/heartbeat-runs/<RUN_ID>"
+
+# 4. If status=error, reset to idle:
+curl.exe -X POST "http://localhost:3100/api/agents/<AGENT_ID>/resume"
+
+# Pre-warm a model before heavy task (avoids 5-min cold start):
+curl.exe -X POST http://localhost:11434/api/generate \
+  -d '{"model":"qwen3:8b","prompt":"hi","keep_alive":"30m","stream":false}'
+```
+
+⚠️ **Don't put task instructions in the wakeup `prompt`** — Paperclip injects
+employee context that overrides it. Use issues. See "Wakeup vs. Issue-Driven
+Tasks" below.
 
 ## Smoke Test Results (2026-04-21)
 
