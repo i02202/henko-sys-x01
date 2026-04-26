@@ -199,6 +199,33 @@ First successful agent run:
 - Workaround: pre-warm Ollama with `keep_alive: "30m"` parameter
 - Agent timeout configured at 900s (default 300s was too short)
 - Per-message latency drops significantly after first run (model stays in VRAM)
+
+## Recovery & Resilience
+
+### After Machine Restart
+Most services auto-recover thanks to:
+- **Ollama**: Native Windows service, auto-starts
+- **Docker containers** (`n8n`, `deer-flow-*`): `restart: unless-stopped` policy
+- **Paperclip**: NOW auto-starts via `henko-paperclip.service` (systemd in WSL2)
+
+### Manual Recovery (if needed)
+1. Open Docker Desktop (auto-starts containers)
+2. WSL2 Ubuntu auto-starts when Docker Desktop boots
+3. Paperclip auto-starts via systemd (`systemctl status henko-paperclip`)
+4. Agents may show `status=error` from interrupted runs — POST to `/api/agents/:id/resume` to reset to `idle`
+
+### Useful Commands (WSL2)
+```bash
+systemctl status henko-paperclip     # Service health
+journalctl -u henko-paperclip -f     # Live logs
+tail -f /var/log/henko-paperclip.log # stdout from Paperclip
+```
+
+### Auto-start Setup (one-time)
+```bash
+MSYS_NO_PATHCONV=1 wsl -d Ubuntu -- bash \
+  "/mnt/c/Users/Daniel Amer/henko-sys-x01/infrastructure/scripts/install-paperclip-systemd.sh"
+```
 - [ ] Appwrite instance (Phase 1b)
 - [ ] PostHog analytics (Phase 1b)
 - [ ] Dokploy self-hosted deploy (Phase 1b)
