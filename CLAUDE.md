@@ -200,6 +200,63 @@ First successful agent run:
 - Agent timeout configured at 900s (default 300s was too short)
 - Per-message latency drops significantly after first run (model stays in VRAM)
 
+### Hardware-Aware Model Selection (RTX 4060 8GB VRAM)
+
+After empirical testing, here's what actually works on this hardware:
+
+| Model | Size | VRAM Fit | Verdict | Best for |
+|-------|------|----------|---------|----------|
+| qwen3:8b | 5.2 GB | 100% in VRAM | ✅ Fast (~5min/run) | INTEL, ALPHA |
+| gemma4:e4b | 9.6 GB → ~7GB Q4 | ~95% in VRAM | ✅ Fast (~0.5s eval) | FORGE (multimodal+reasoning) |
+| gemma3:12b | 8.1 GB | ~85% in VRAM | ⚠️ Tight, slower | Vision tasks |
+| qwen3:32b | 20 GB | ~40% in VRAM | ❌ **Times out** at 30min+ | NOT viable on this hardware |
+
+**Critical lesson:** qwen3:32b on 8GB VRAM with 60% CPU offload is too slow to
+complete even simple agent tasks within reasonable timeouts. The Hermes
+system prompt + 75 skills load + reasoning per turn pushes total time past
+30 minutes. **Use models that fit ≥95% in VRAM for any agent that runs
+through Paperclip + Hermes on this hardware.**
+
+For tasks that genuinely need 32B+ reasoning, route them to GLM-5.1:cloud
+(Ollama Cloud) or Claude API instead of local qwen3:32b.
+
+### Agent Behavior Discoveries
+
+#### Wakeup vs. Issue-Driven Tasks
+The `prompt` field in `POST /agents/:id/wakeup` **is largely ignored** because
+Paperclip injects its own employee context that says "check your inbox for
+assigned issues". To give an agent a real task:
+
+1. `POST /companies/:id/issues` with `assigneeAgentId` set
+2. `POST /agents/:id/wakeup` with empty body `{}`
+3. Agent reads the issue, plans, executes tool calls
+
+**Do NOT** rely on the wakeup `prompt` for task delivery. Use issues.
+
+#### Agent Termination Issue (Hermes v0.10.0)
+With `max_iterations: 100` and an open-ended task, Hermes does NOT terminate
+cleanly after completing the work. Observed pattern:
+- 0:00 — Agent starts, reads issue
+- 1:30 — Agent makes tool call (file write succeeds)
+- 1:30–15:00 — Agent loops: verifying, commenting, planning more work
+- 15:00 — Paperclip kills with SIGINT (timeout)
+
+**The actual work completes early** (~1-2 min for simple tasks), but the
+agent over-thinks and never decides "done". This is a known Hermes pattern.
+
+**Mitigations:**
+- Lower `max_iterations` (e.g., `5` for simple tasks)
+- Lower `timeoutSec` to fail-fast (e.g., `300s`)
+- Write very specific issue descriptions: "Write file X. After writing, exit."
+- Accept that timeout != failure — check the workspace/files for actual outputs
+
+### First Real Agent Action — VERIFIED 2026-04-26
+- Agent: FORGE Engineer (gemma4:e4b)
+- Issue: `640d71c3` — "Smoke test: write hello-world Python file"
+- Run: `aef6ad01` — status: timed_out (15m51s)
+- **But: file `/home/daniel/forge-smoke-test.py` was created with `print('FORGE_OK')`**
+- Conclusion: end-to-end agent action through Paperclip → Hermes → file system **works**.
+
 ## Recovery & Resilience
 
 ### After Machine Restart
