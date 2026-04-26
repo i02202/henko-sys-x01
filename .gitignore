@@ -1,7 +1,11 @@
-# Environment
+# Environment (but allow .env.example templates)
 .env
 .env.local
 .env.*.local
+!.env.example
+
+# Claude Code session state (not part of the project)
+.claude/
 
 # Dependencies
 node_modules/

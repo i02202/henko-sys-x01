@@ -1,0 +1,12 @@
+diff --git a/scripts/docker.sh b/scripts/docker.sh
+index b50df15..ef79a03 100755
+--- a/scripts/docker.sh
++++ b/scripts/docker.sh
+@@ -235,6 +235,7 @@ start() {
+     # Set nginx routing for gateway mode (envsubst in nginx container)
+     if $gateway_mode; then
+         export LANGGRAPH_UPSTREAM=gateway:8001
++        export MSYS_NO_PATHCONV=1  # Prevent Git Bash from converting /api/ to C:/Program Files/Git/api/
+         export LANGGRAPH_REWRITE=/api/
+     fi
+ 

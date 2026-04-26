@@ -1,0 +1,7 @@
+[submodule "core/deerflow/deer-flow"]
+	path = core/deerflow/deer-flow
+	url = https://github.com/bytedance/deer-flow.git
+	# Working tree is patched at runtime via infrastructure/patches/*
+	# (see infrastructure/scripts/bootstrap-deerflow.sh). Pinned to the
+	# commit recorded in the gitlink — do not bump without re-testing patches.
+	ignore = dirty
