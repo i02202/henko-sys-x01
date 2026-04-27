@@ -259,6 +259,26 @@ all the canonical scripts, configs, and the DeerFlow submodule.
 
 ---
 
+## Henko Mission Control (live dashboard)
+
+Single-page unified dashboard at `http://127.0.0.1:7654`. Auto-refreshes
+every 3s, shows: services health (Ollama/Paperclip/DeerFlow/n8n), GPU
+utilization + VRAM, currently-loaded Ollama models with KV ctx + expiry,
+all Henko agents from Paperclip with status + last heartbeat, daily
+briefing list with token/throughput/source counts, Task Scheduler next
+run + last result, Ollama log signal-only tail (filtered out the
+`/api/tags` health-check noise), and last wrapper run output.
+
+```powershell
+# Start the dashboard server (uses non-Store Python automatically)
+powershell -ExecutionPolicy Bypass -NoProfile `
+    -File infrastructure\scripts\start-dashboard.ps1
+# Open http://127.0.0.1:7654 in any browser
+```
+
+Code: `modules/dashboard/server.py` (stdlib-only Python aggregator) +
+`modules/dashboard/dashboard.html` (vanilla JS, no build step).
+
 ## Appendix — useful one-liners
 
 ```bash

@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Henko Mission Control</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --border: #30363d;
+    --fg: #c9d1d9; --muted: #8b949e; --dim: #6e7681;
+    --ok: #3fb950; --warn: #d29922; --err: #f85149; --info: #58a6ff;
+    --mono: ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 16px;
+    background: var(--bg); color: var(--fg);
+    font: 13px/1.4 -apple-system, "Segoe UI", system-ui, sans-serif;
+  }
+  header {
+    display: flex; justify-content: space-between; align-items: baseline;
+    padding-bottom: 12px; border-bottom: 1px solid var(--border); margin-bottom: 16px;
+  }
+  header h1 { margin: 0; font-size: 16px; font-weight: 600; }
+  header .meta { color: var(--muted); font-family: var(--mono); font-size: 12px; }
+  header .meta .live { color: var(--ok); }
+  header .meta .stale { color: var(--err); }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+    gap: 12px;
+  }
+  .card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 6px; padding: 12px 14px;
+    display: flex; flex-direction: column; min-height: 100px;
+  }
+  .card h2 {
+    margin: 0 0 10px; font-size: 12px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .card.span-2 { grid-column: span 2; }
+  .dot {
+    display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--dim); flex-shrink: 0;
+  }
+  .dot.ok { background: var(--ok); box-shadow: 0 0 6px rgba(63,185,80,0.6); }
+  .dot.warn { background: var(--warn); }
+  .dot.err { background: var(--err); }
+  .row {
+    display: flex; justify-content: space-between; align-items: baseline;
+    padding: 4px 0; border-bottom: 1px solid rgba(48,54,61,0.5);
+  }
+  .row:last-child { border-bottom: none; }
+  .row .label { color: var(--muted); }
+  .row .val { font-family: var(--mono); }
+  .row .val.ok { color: var(--ok); }
+  .row .val.warn { color: var(--warn); }
+  .row .val.err { color: var(--err); }
+  .row .val.dim { color: var(--dim); }
+  .bar {
+    height: 4px; background: rgba(110,118,129,0.2); border-radius: 2px;
+    overflow: hidden; margin: 6px 0 4px;
+  }
+  .bar > div {
+    height: 100%; transition: width 0.3s ease;
+    background: linear-gradient(90deg, var(--ok), var(--info));
+  }
+  .bar.warn > div { background: linear-gradient(90deg, var(--info), var(--warn)); }
+  .bar.crit > div { background: linear-gradient(90deg, var(--warn), var(--err)); }
+  pre {
+    margin: 0; padding: 8px;
+    background: rgba(0,0,0,0.3); border-radius: 4px;
+    font: 11px/1.4 var(--mono); color: var(--muted);
+    overflow-x: auto; white-space: pre-wrap; word-break: break-word;
+    max-height: 220px; overflow-y: auto;
+  }
+  pre.tight { font-size: 10.5px; line-height: 1.35; max-height: 260px; }
+  .pill {
+    display: inline-block; padding: 1px 6px; border-radius: 3px;
+    font-family: var(--mono); font-size: 11px;
+    background: rgba(88,166,255,0.15); color: var(--info);
+  }
+  .pill.ok { background: rgba(63,185,80,0.15); color: var(--ok); }
+  .pill.warn { background: rgba(210,153,34,0.15); color: var(--warn); }
+  .pill.err { background: rgba(248,81,73,0.15); color: var(--err); }
+  .pill.idle { background: rgba(110,118,129,0.18); color: var(--muted); }
+  table { border-collapse: collapse; width: 100%; }
+  th, td {
+    text-align: left; padding: 5px 4px;
+    border-bottom: 1px solid rgba(48,54,61,0.5);
+    font-size: 12px;
+  }
+  th { color: var(--muted); font-weight: 500; font-size: 11px; }
+  td.mono { font-family: var(--mono); font-size: 11.5px; }
+  td.right { text-align: right; }
+  a { color: var(--info); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .empty { color: var(--dim); font-style: italic; padding: 8px 0; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🎯 Henko Mission Control <span style="color: var(--dim); font-weight: 400;">— v0.1</span></h1>
+  <div class="meta">
+    snapshot <span id="ts" class="live">—</span>
+    · refresh <span id="age">0</span>s ago
+    · next in <span id="next">—</span>s
+  </div>
+</header>
+
+<div class="grid">
+
+  <div class="card">
+    <h2><span class="dot" id="d-services"></span> Services</h2>
+    <div id="services"></div>
+  </div>
+
+  <div class="card">
+    <h2><span class="dot" id="d-gpu"></span> GPU (RTX 4060)</h2>
+    <div id="gpu"></div>
+  </div>
+
+  <div class="card span-2">
+    <h2><span class="dot" id="d-ollama"></span> Ollama state</h2>
+    <div id="ollama"></div>
+  </div>
+
+  <div class="card span-2">
+    <h2><span class="dot" id="d-agents"></span> Henko Agents</h2>
+    <div id="agents"></div>
+  </div>
+
+  <div class="card">
+    <h2><span class="dot" id="d-task"></span> Daily Briefing Task</h2>
+    <div id="task"></div>
+  </div>
+
+  <div class="card">
+    <h2><span class="dot" id="d-briefings"></span> Briefings</h2>
+    <div id="briefings"></div>
+  </div>
+
+  <div class="card span-2">
+    <h2><span class="dot"></span> Ollama log (signal lines, latest first)</h2>
+    <pre id="ollama-log" class="tight">—</pre>
+  </div>
+
+  <div class="card span-2">
+    <h2><span class="dot"></span> Last briefing run (Task Scheduler wrapper)</h2>
+    <pre id="scheduler-log" class="tight">—</pre>
+  </div>
+
+</div>
+
+<script>
+const POLL_MS = 3000;
+const STALE_AFTER_MS = 9000;
+let lastSnapshotTs = null;
+
+const $ = (id) => document.getElementById(id);
+
+function setDot(id, ok) {
+  const el = $(id);
+  if (!el) return;
+  el.classList.remove('ok','warn','err');
+  el.classList.add(ok === true ? 'ok' : (ok === 'warn' ? 'warn' : 'err'));
+}
+
+function row(label, val, klass='') {
+  return `<div class="row"><span class="label">${label}</span><span class="val ${klass}">${val ?? '—'}</span></div>`;
+}
+
+function pill(text, klass='') {
+  return `<span class="pill ${klass}">${text}</span>`;
+}
+
+function bar(pct, kind='') {
+  const k = pct > 90 ? 'crit' : (pct > 75 ? 'warn' : '');
+  return `<div class="bar ${k}"><div style="width:${Math.max(0, Math.min(100, pct))}%"></div></div>`;
+}
+
+function fmtAgo(iso) {
+  if (!iso) return '—';
+  const ms = Date.now() - new Date(iso).getTime();
+  if (ms < 0) return 'in ' + Math.round(-ms/60000) + ' min';
+  if (ms < 60*1000) return Math.round(ms/1000) + 's ago';
+  if (ms < 3600*1000) return Math.round(ms/60000) + ' min ago';
+  if (ms < 86400*1000) return Math.round(ms/3600000) + ' h ago';
+  return Math.round(ms/86400000) + ' d ago';
+}
+
+function render(snap) {
+  // Services
+  const svcs = ['ollama','paperclip','deerflow','n8n'];
+  const sHtml = svcs.map(k => {
+    const s = snap[k] || {};
+    const status = s.ok ? pill('UP','ok') : pill('DOWN','err');
+    const v = s.version ? `<span class="val mono dim" style="margin-left:6px">${s.version}</span>` : '';
+    return `<div class="row"><span class="label">${k}${v}</span>${status}</div>`;
+  }).join('');
+  $('services').innerHTML = sHtml;
+  setDot('d-services', svcs.every(k => snap[k]?.ok));
+
+  // GPU
+  const g = snap.gpu || {};
+  if (g.ok) {
+    $('gpu').innerHTML =
+      row('utilization', `${g.utilization_pct}%`, g.utilization_pct > 80 ? 'warn' : 'ok') +
+      bar(g.utilization_pct) +
+      row('VRAM', `${g.vram_used_mib} / ${g.vram_total_mib} MiB (${g.vram_pct}%)`,
+          g.vram_pct > 90 ? 'err' : (g.vram_pct > 75 ? 'warn' : 'ok')) +
+      bar(g.vram_pct);
+    setDot('d-gpu', g.vram_pct < 95);
+  } else {
+    $('gpu').innerHTML = `<div class="empty">nvidia-smi unavailable: ${g.error || ''}</div>`;
+    setDot('d-gpu', 'warn');
+  }
+
+  // Ollama
+  const o = snap.ollama || {};
+  let oHtml = '';
+  if (o.ok) {
+    if (o.loaded_models && o.loaded_models.length > 0) {
+      oHtml = '<table><thead><tr><th>model</th><th>quant</th><th class="right">size</th><th class="right">VRAM</th><th class="right">ctx</th><th class="right">expires</th></tr></thead><tbody>';
+      o.loaded_models.forEach(m => {
+        const vramKlass = m.vram_pct >= 99 ? 'ok' : 'warn';
+        oHtml += `<tr>
+          <td class="mono">${m.name}</td>
+          <td class="mono dim">${m.quantization}</td>
+          <td class="right mono">${m.size_gb} GB</td>
+          <td class="right mono"><span class="${vramKlass}">${m.vram_gb} GB (${m.vram_pct}%)</span></td>
+          <td class="right mono">${m.ctx}</td>
+          <td class="right mono dim">${m.expires_in_min != null ? m.expires_in_min + ' min' : '—'}</td>
+        </tr>`;
+      });
+      oHtml += '</tbody></table>';
+    } else {
+      oHtml = '<div class="empty">no models loaded</div>';
+    }
+    oHtml += `<div class="row" style="margin-top:8px;border:none"><span class="label">available models</span><span class="val mono">${o.available_models_count}</span></div>`;
+    setDot('d-ollama', true);
+  } else {
+    oHtml = '<div class="empty">Ollama unreachable</div>';
+    setDot('d-ollama', false);
+  }
+  $('ollama').innerHTML = oHtml;
+
+  // Henko Agents
+  const p = snap.paperclip || {};
+  let aHtml = '';
+  if (p.ok && p.agents && p.agents.length > 0) {
+    aHtml = '<table><thead><tr><th>agent</th><th>role</th><th>model</th><th>status</th><th>heartbeat</th><th>last beat</th></tr></thead><tbody>';
+    p.agents.forEach(a => {
+      const sk = a.status === 'idle' ? 'idle' : (a.status === 'error' ? 'err' : (a.status === 'busy' || a.status === 'running' ? 'warn' : ''));
+      const hb = a.heartbeat_enabled ? pill('on','ok') : pill('off','idle');
+      aHtml += `<tr>
+        <td>${a.name}</td>
+        <td class="dim">${a.role}</td>
+        <td class="mono">${a.model}</td>
+        <td>${pill(a.status, sk)}</td>
+        <td>${hb}</td>
+        <td class="dim mono">${fmtAgo(a.last_heartbeat)}</td>
+      </tr>`;
+    });
+    aHtml += '</tbody></table>';
+    setDot('d-agents', p.agents.every(a => a.status !== 'error'));
+  } else {
+    aHtml = `<div class="empty">${p.ok ? 'no agents' : 'Paperclip unreachable'}</div>`;
+    setDot('d-agents', p.ok);
+  }
+  $('agents').innerHTML = aHtml;
+
+  // Task Scheduler
+  const t = snap.task_scheduler || {};
+  if (t.ok) {
+    const lr = t.last_result;
+    let resKlass = 'dim', resTxt = lr == null ? 'never run' : `0x${(lr >>> 0).toString(16).padStart(8,'0').toUpperCase()}`;
+    if (lr === 0) { resKlass = 'ok'; resTxt = 'success (0)'; }
+    else if (lr === 0x00041303) { resKlass = 'dim'; resTxt = 'pending first run'; }
+    else if (lr != null && lr !== 0) { resKlass = 'err'; }
+    $('task').innerHTML =
+      row('state', t.state, t.state === 'Ready' ? 'ok' : 'warn') +
+      row('next run', t.next_run ? new Date(t.next_run).toLocaleString() : '—', 'ok') +
+      row('last run', t.last_run ? fmtAgo(t.last_run) : 'never') +
+      row('last result', resTxt, resKlass);
+    setDot('d-task', t.state === 'Ready');
+  } else {
+    $('task').innerHTML = `<div class="empty">task not registered: ${t.error || ''}</div>`;
+    setDot('d-task', 'warn');
+  }
+
+  // Briefings
+  const b = snap.briefings || {};
+  if (b.available) {
+    let bHtml = '';
+    bHtml += row('today exists', b.today_exists ? 'yes' : 'NO', b.today_exists ? 'ok' : 'err');
+    bHtml += row('total files', b.list?.length ?? 0);
+    if (b.list && b.list.length > 0) {
+      bHtml += '<table style="margin-top:6px"><thead><tr><th>date</th><th class="right">size</th><th class="right">tokens</th><th class="right">tok/s</th><th class="right">srcs</th></tr></thead><tbody>';
+      b.list.slice(0, 6).forEach(it => {
+        bHtml += `<tr>
+          <td class="mono">${it.date}</td>
+          <td class="right mono dim">${it.size_kb} KB</td>
+          <td class="right mono">${it.tokens || '—'}</td>
+          <td class="right mono dim">${it.throughput ? it.throughput.toFixed(1) : '—'}</td>
+          <td class="right">${it.web_access ? pill(it.sources_total,'ok') : pill('—','warn')}</td>
+        </tr>`;
+      });
+      bHtml += '</tbody></table>';
+    }
+    $('briefings').innerHTML = bHtml;
+    setDot('d-briefings', b.today_exists);
+  } else {
+    $('briefings').innerHTML = `<div class="empty">briefings dir not accessible</div>`;
+    setDot('d-briefings', 'warn');
+  }
+
+  // Logs
+  const ol = snap.ollama_log || {};
+  $('ollama-log').textContent = ol.ok && ol.lines && ol.lines.length > 0
+    ? ol.lines.slice().reverse().join('\n')
+    : '(no signal lines in recent log)';
+
+  const sl = snap.scheduler_logs || {};
+  $('scheduler-log').textContent = sl.ok && sl.latest_tail
+    ? `${sl.latest_path} (${sl.latest_mtime})\n${sl.latest_tail.join('\n')}`
+    : '(no scheduler logs yet)';
+
+  lastSnapshotTs = Date.now();
+  $('ts').textContent = new Date(snap.ts).toLocaleTimeString();
+}
+
+async function poll() {
+  try {
+    const r = await fetch('/api/snapshot', { cache: 'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const snap = await r.json();
+    render(snap);
+    $('ts').classList.remove('stale');
+    $('ts').classList.add('live');
+  } catch (e) {
+    $('ts').classList.remove('live');
+    $('ts').classList.add('stale');
+    $('ts').textContent = 'fetch error: ' + e.message;
+  }
+}
+
+function tick() {
+  if (lastSnapshotTs) {
+    const age = Math.round((Date.now() - lastSnapshotTs) / 1000);
+    $('age').textContent = age;
+    $('next').textContent = Math.max(0, Math.round((POLL_MS - (Date.now() - lastSnapshotTs)) / 1000));
+    if (Date.now() - lastSnapshotTs > STALE_AFTER_MS) {
+      $('ts').classList.remove('live');
+      $('ts').classList.add('stale');
+    }
+  }
+}
+
+poll();
+setInterval(poll, POLL_MS);
+setInterval(tick, 500);
+</script>
+
+</body>
+</html>
