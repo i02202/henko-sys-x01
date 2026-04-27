@@ -240,23 +240,60 @@ First successful agent run:
 
 ### Hardware-Aware Model Selection (RTX 4060 8GB VRAM)
 
-After empirical testing, here's what actually works on this hardware:
+After empirical testing on 2026-04-26, here's the **revised** truth on this hardware:
 
-| Model | Size | VRAM Fit | Verdict | Best for |
-|-------|------|----------|---------|----------|
-| qwen3:8b | 5.2 GB | 100% in VRAM | ✅ Fast (~5min/run) | INTEL, ALPHA |
-| gemma4:e4b | 9.6 GB → ~7GB Q4 | ~95% in VRAM | ✅ Fast (~0.5s eval) | FORGE (multimodal+reasoning) |
-| gemma3:12b | 8.1 GB | ~85% in VRAM | ⚠️ Tight, slower | Vision tasks |
-| qwen3:32b | 20 GB | ~40% in VRAM | ❌ **Times out** at 30min+ | NOT viable on this hardware |
+| Model | File size (Q4) | Native ctx | Total mem @ native ctx | VRAM fit (8GB) | Throughput |
+|-------|----------------|------------|------------------------|----------------|------------|
+| qwen3:8b | 5.2 GB | 40K | ~8.9 GB | ✅ 5.7 GB in VRAM (capped to 40K) | **13–37 tok/s** |
+| gemma4:e4b | 9.6 GB | 128K | ~13 GB | ❌ CPU fallback (`size_vram: 0`) | 0.6–3.6 tok/s on CPU |
+| gemma3:12b | 8.1 GB | 128K | ~12 GB | ❌ CPU fallback | slow |
+| qwen3:32b | 20 GB | 32K | ~25 GB | ❌ Times out 30 min+ | not viable |
+| campus-expert | 1.6 GB | 2K | ~2 GB | ✅ Fully in VRAM | ~50 tok/s |
 
-**Critical lesson:** qwen3:32b on 8GB VRAM with 60% CPU offload is too slow to
-complete even simple agent tasks within reasonable timeouts. The Hermes
-system prompt + 75 skills load + reasoning per turn pushes total time past
-30 minutes. **Use models that fit ≥95% in VRAM for any agent that runs
-through Paperclip + Hermes on this hardware.**
+**Critical realization (2026-04-26): Hermes Agent enforces a 64K minimum
+context window** (`Failed to initialize agent: ... below the minimum 64,000
+required by Hermes Agent`). qwen3:8b's native 40K is **rejected**, so
+**Hermes is incompatible with the only model that fits in this VRAM**.
 
-For tasks that genuinely need 32B+ reasoning, route them to GLM-5.1:cloud
+This was hidden by the 2026-04-21 smoke test passing with a trivial response
+(~50-100 tokens, ran on degraded CPU within timeout). Real briefing/code-gen
+tasks require hundreds of tokens and time out. See GitHub issue #2 for full
+analysis and options forward.
+
+**Sovereign Direct Generation Pattern (the working bypass)**
+
+For single-shot generative tasks (briefings, summaries, translations), bypass
+Hermes/Paperclip entirely and call Ollama directly. `modules/intel/generate-briefing.py`
+implements this pattern:
+
+- Uses `qwen3:8b` with `num_ctx: 8192` (small enough for VRAM, big enough for prompt)
+- POSTs to `/api/generate` via `curl` subprocess (urllib hangs under WSL2 mirrored networking)
+- Writes output to `/home/daniel/briefings/YYYY-MM-DD.md` with YAML frontmatter for future RAG ingestion
+- Verified ~9 min cold-start (model load), ~1-2 min warm
+
+Use this pattern for any single-shot LLM task on this hardware until either
+(a) hardware upgrade to ≥16GB VRAM, or (b) Hermes patched to allow <64K ctx.
+
+For tasks that genuinely need 32B+ reasoning, route to GLM-5.1:cloud
 (Ollama Cloud) or Claude API instead of local qwen3:32b.
+
+### Ollama Operational Notes
+
+- **Auto-update is on by default.** Ollama silently upgraded 0.20.7 → 0.21.x
+  on 2026-04-26 14:17 (logged in `%LOCALAPPDATA%\Ollama\upgrade.log`). The
+  serving binary version doesn't always match `/api/version` reports.
+  Recommend disabling via systray "Allow auto-updates" toggle to avoid drift.
+- **`OLLAMA_FLASH_ATTENTION=1` and `OLLAMA_KV_CACHE_TYPE=q8_0`** are useful
+  for fitting larger contexts in VRAM, but in our test the User-scope env vars
+  did NOT propagate to the systray-launched serving process. To apply them
+  reliably: launch `ollama serve` manually from a PowerShell session that has
+  set `$env:OLLAMA_FLASH_ATTENTION = "1"` first.
+- **`size_vram: 0` in `/api/ps`** means the model loaded in CPU mode. This
+  causes 10–100× slowdown vs GPU mode. Always verify VRAM load before relying
+  on inference speed estimates.
+- **After `SIGINT` of an in-flight request, Ollama's serving process can
+  enter a degraded state** where subsequent chat/generate requests hang. Full
+  process kill + restart usually clears it.
 
 ### Agent Behavior Discoveries
 
@@ -348,11 +385,12 @@ See: `infrastructure/scripts/setup-hermes.sh` for reproducible setup.
 
 See: `infrastructure/scripts/setup-paperclip.sh` for reproducible setup.
 
-### Phase 2: INTEL MVP (2 weeks)
-- Research agent with RAG
-- News/paper monitoring
-- Daily briefings in Spanish
-- Knowledge graph (Appwrite DB + embeddings)
+### Phase 2: INTEL MVP — partially operational
+- ✅ **Daily Spanish briefing via direct Ollama (sovereign, non-agentic)** — `modules/intel/generate-briefing.py` writes to `/home/daniel/briefings/YYYY-MM-DD.md`. First run: 2026-04-26.
+- ❌ **Agentic INTEL via Hermes/Paperclip** — blocked by hardware/config mismatch (see § "Hardware-Aware Model Selection" + GitHub issue #2)
+- ⏳ Research agent with RAG — needs Appwrite (Phase 1b)
+- ⏳ News/paper monitoring — needs web fetcher integration (Firecrawl, RSS, HN API)
+- ⏳ Knowledge graph (Appwrite DB + embeddings)
 
 ### Phase 3: FORGE MVP (3 weeks)
 - BMAD methodology agents (PM, Architect, Dev, QA)

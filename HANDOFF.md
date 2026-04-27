@@ -1,11 +1,31 @@
 # Henko Sys x01 — Session Handoff
 
-> Last updated: 2026-04-26
-> Phase 1 status: ✅ Complete
-> Next phase: Phase 2 — INTEL MVP
+> Last updated: 2026-04-26 (post Phase 2 MVP discovery session)
+> Phase 1 status: ⚠️ Operational with caveats — see GitHub issue #2
+> Phase 2 status: ✅ INTEL briefing pipeline live (sovereign, direct Ollama). ❌ Agentic loop blocked.
 
 This document is the canonical resume point for a new Claude Code session.
 **It points to authoritative content elsewhere — don't duplicate.**
+
+---
+
+## ⚠️ Read this BEFORE doing anything in Phase 2
+
+The 2026-04-21 smoke tests passed by coincidence (trivial responses fit
+within timeouts on degraded CPU mode). On 2026-04-26 we discovered:
+
+1. **Hermes Agent enforces a 64K minimum context window** at agent init.
+2. **No installed model with native ≥64K ctx fits in 8GB VRAM** — all fall back to CPU at ~0.6 tok/s, which times out before generating a useful response.
+3. **The only model that loads in VRAM is `qwen3:8b` (40K native ctx)** — but Hermes rejects it for being below the 64K minimum.
+
+**Net effect: agentic INTEL/FORGE/ALPHA via Hermes/Paperclip cannot complete real tasks on this hardware.** The smoke-test plumbing works; the throughput does not.
+
+Full diagnosis + options forward in **GitHub issue #2**: https://github.com/i02202/henko-sys-x01/issues/2
+
+**Working bypass:** `modules/intel/generate-briefing.py` calls Ollama directly
+with `qwen3:8b` (in VRAM, ~37 tok/s) and writes briefings to
+`/home/daniel/briefings/YYYY-MM-DD.md`. Use this pattern for any single-shot
+LLM task until hardware is upgraded or Hermes is patched.
 
 ---
 
@@ -86,38 +106,61 @@ If anything is missing, see the **Recovery & Resilience** section of `CLAUDE.md`
 
 **Goal:** INTEL Researcher producing daily briefings.
 
-### Phase 2 task suggestions (issues to create)
+### What works today (sovereign, non-agentic)
 
-```
-1. "Compile a Spanish-language briefing of major AI/ML news from the last 24h.
-    Sources: Hacker News, Hugging Face daily papers, GitHub trending. Output:
-    /home/daniel/briefings/YYYY-MM-DD.md"
+```bash
+# Run from WSL2 Ubuntu — generates today's Spanish AI briefing in ~1-9 min
+wsl -d Ubuntu -u daniel -- python3 /mnt/c/Users/Daniel\ Amer/henko-sys-x01/modules/intel/generate-briefing.py
 
-2. "Monitor arXiv cs.LG and cs.CL for papers about agent frameworks. Save the
-    top 5 most relevant to /home/daniel/intel/papers/YYYY-MM-DD.json"
+# Pass an explicit date to backfill / replay
+... generate-briefing.py 2026-04-25
 
-3. "Track the top 20 GitHub repos in 'AI agents' topic. Output a weekly delta
-    of new entries to /home/daniel/intel/github-trends/YYYY-WW.md"
+# Output lands at /home/daniel/briefings/YYYY-MM-DD.md with YAML frontmatter
 ```
 
-Use the API snippet in `CLAUDE.md` § "Working with agents — quick reference"
-to create these issues.
+The script bypasses Hermes/Paperclip entirely and calls Ollama
+`/api/generate` with `qwen3:8b` directly. See § "Sovereign Direct Generation
+Pattern" in CLAUDE.md for why and how.
 
-### Hard prerequisites still missing for Phase 2
+### Cron schedule (already installed)
 
-- **Appwrite is not installed** but Phase 2 requires it for the persistent
-  knowledge base / vector store. Either:
-  - Install Appwrite first (Phase 1b), or
-  - Defer the knowledge graph and have INTEL write Markdown files instead.
-- **No `infrastructure/scripts/setup-appwrite.sh` exists.** It needs to be created.
-- **No vector store / RAG layer is wired.** `nomic-embed-text` is installed in
-  Ollama but no consumer uses it yet.
+The briefing runs daily at 07:00 local time via WSL crontab as user `daniel`.
+Check status:
+
+```bash
+wsl -d Ubuntu -u daniel -- crontab -l
+wsl -d Ubuntu -u daniel -- tail /home/daniel/briefings/.cron.log
+```
+
+### What does NOT work today (Hermes agentic path)
+
+`POST /agents/<id>/wakeup` runs but Hermes init fails with
+`Model qwen3:8b has a context window of 16,384 tokens, which is below the
+minimum 64,000 required by Hermes Agent.` (or Hermes loads but Ollama times
+out because no installed model fits in 8GB VRAM at 64K ctx).
+
+**Don't waste time on agentic INTEL/FORGE/ALPHA tasks until issue #2 is
+resolved.** Use the script pattern for any single-shot work.
+
+### Next-up tasks (when ready)
+
+1. **Web fetcher integration** — make briefing pull real news from Hacker News
+   API, HuggingFace daily papers, GitHub trending. Without this the model
+   hallucinates plausible-sounding but fictional content.
+
+2. **Phase 1c hardware reconciliation (issue #2)** — pick one of:
+   - Hardware upgrade to 16+ GB VRAM
+   - Patch Hermes to allow <64K ctx
+   - Configure Hermes to use Ollama Cloud / Claude API
+
+3. **Appwrite installation** for persistent knowledge graph + RAG over briefings.
 
 ### Hard prerequisites already met
 
-- Ollama keep-alive (use 30m param when triggering long agent runs).
-- Hermes-via-Paperclip is the stable entry point (issues + wakeup pattern).
-- Hardware-aware model selection rules documented (see CLAUDE.md).
+- `qwen3:8b` loads in VRAM (5.7 GB used, ~37 tok/s warm) on RTX 4060.
+- `modules/intel/generate-briefing.py` proven end-to-end.
+- Ollama keep-alive works (use `keep_alive: 30m` in API calls).
+- systemd cron + WSL2 + Paperclip auto-start all stable.
 
 ---
 
