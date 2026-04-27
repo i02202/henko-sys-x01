@@ -279,10 +279,12 @@ For tasks that genuinely need 32B+ reasoning, route to GLM-5.1:cloud
 
 ### Ollama Operational Notes
 
-- **Auto-update is on by default.** Ollama silently upgraded 0.20.7 → 0.21.x
-  on 2026-04-26 14:17 (logged in `%LOCALAPPDATA%\Ollama\upgrade.log`). The
-  serving binary version doesn't always match `/api/version` reports.
-  Recommend disabling via systray "Allow auto-updates" toggle to avoid drift.
+- **Auto-update is on by default and drifts hourly.** `app.log` confirms an
+  in-process update checker firing every `1h0m0s`. Observed drift over 2 days:
+  0.20.7 → 0.21.1 → 0.21.2 (logged in `%LOCALAPPDATA%\Ollama\upgrade.log`).
+  Disable via systray "Allow auto-updates" toggle. There is no documented
+  CLI/file flag — the setting lives in `%LOCALAPPDATA%\Ollama\db.sqlite`
+  (no `sqlite3` shipped on host so direct edit isn't trivial).
 - **`OLLAMA_FLASH_ATTENTION=1` and `OLLAMA_KV_CACHE_TYPE=q8_0`** are useful
   for fitting larger contexts in VRAM, but in our test the User-scope env vars
   did NOT propagate to the systray-launched serving process. To apply them
@@ -293,7 +295,25 @@ For tasks that genuinely need 32B+ reasoning, route to GLM-5.1:cloud
   on inference speed estimates.
 - **After `SIGINT` of an in-flight request, Ollama's serving process can
   enter a degraded state** where subsequent chat/generate requests hang. Full
-  process kill + restart usually clears it.
+  process kill + restart usually clears it. PowerShell:
+  `Get-Process ollama* | Stop-Process -Force; Start-Process "$env:LOCALAPPDATA\Programs\Ollama\ollama app.exe"`.
+- **Ollama is single-slot per loaded model** (`Parallel:1` in runner load
+  request). A second client's request queues behind the first. Client-side
+  `--max-time` does NOT abort the server-side work, so backlogged requests
+  inherit the timeout — symptom is `0 bytes received` at exactly your
+  configured timeout.
+- **The first request after a model load decides the `KvSize`.** Subsequent
+  calls passing a different `num_ctx` are silently ignored. Confirmed via
+  server.log `KvSize:4096` even when the request body had `num_ctx:8192`.
+  If a stricter ctx is required, unload the model first
+  (`POST /api/generate {"model":"qwen3:8b","keep_alive":0}`) before reloading.
+- **Identifying the noisy client.** When generation hangs and `/api/ps` shows
+  unexpected models loading: `Get-NetTCPConnection -RemotePort 11434 -State Established`
+  → take the `OwningProcess` IDs → `Get-CimInstance Win32_Process -Filter "ProcessId=N"`
+  reveals the command line. On 2026-04-26 we identified a stray DeerFlow
+  uvicorn (host process on :8001) spamming `/v1/chat/completions` every
+  12-52 seconds. The Docker `deer-flow-gateway` container is separate and
+  was uninvolved.
 
 ### Agent Behavior Discoveries
 
@@ -387,9 +407,9 @@ See: `infrastructure/scripts/setup-paperclip.sh` for reproducible setup.
 
 ### Phase 2: INTEL MVP — partially operational
 - ✅ **Daily Spanish briefing via direct Ollama (sovereign, non-agentic)** — `modules/intel/generate-briefing.py` writes to `/home/daniel/briefings/YYYY-MM-DD.md`. First run: 2026-04-26.
+- ✅ **Web grounding via `modules/intel/fetch_sources.py`** — pulls real items from HN (Algolia), HuggingFace daily papers, GitHub Search API. Strict-citation prompt (option A) instructs the model to use ONLY fetched items. Verified zero hallucination on 2026-04-26 generation.
 - ❌ **Agentic INTEL via Hermes/Paperclip** — blocked by hardware/config mismatch (see § "Hardware-Aware Model Selection" + GitHub issue #2)
-- ⏳ Research agent with RAG — needs Appwrite (Phase 1b)
-- ⏳ News/paper monitoring — needs web fetcher integration (Firecrawl, RSS, HN API)
+- ⏳ Research agent with RAG — needs Appwrite (Phase 1b). Briefings already carry TZ-aware frontmatter (`generated_at`, `sources_anchor_utc`, source counts) for clean ingestion.
 - ⏳ Knowledge graph (Appwrite DB + embeddings)
 
 ### Phase 3: FORGE MVP (3 weeks)

@@ -1,8 +1,8 @@
 # Henko Sys x01 — Session Handoff
 
-> Last updated: 2026-04-26 (post Phase 2 MVP discovery session)
+> Last updated: 2026-04-26 (Phase 2 MVP — web grounding shipped)
 > Phase 1 status: ⚠️ Operational with caveats — see GitHub issue #2
-> Phase 2 status: ✅ INTEL briefing pipeline live (sovereign, direct Ollama). ❌ Agentic loop blocked.
+> Phase 2 status: ✅ INTEL briefing pipeline **with real web sources** (sovereign, direct Ollama). ❌ Agentic loop blocked.
 
 This document is the canonical resume point for a new Claude Code session.
 **It points to authoritative content elsewhere — don't duplicate.**
@@ -23,9 +23,11 @@ within timeouts on degraded CPU mode). On 2026-04-26 we discovered:
 Full diagnosis + options forward in **GitHub issue #2**: https://github.com/i02202/henko-sys-x01/issues/2
 
 **Working bypass:** `modules/intel/generate-briefing.py` calls Ollama directly
-with `qwen3:8b` (in VRAM, ~37 tok/s) and writes briefings to
-`/home/daniel/briefings/YYYY-MM-DD.md`. Use this pattern for any single-shot
-LLM task until hardware is upgraded or Hermes is patched.
+with `qwen3:8b` (in VRAM, ~19-37 tok/s) and writes briefings to
+`/home/daniel/briefings/YYYY-MM-DD.md`. **The prompt is now grounded in real
+web sources** via `modules/intel/fetch_sources.py` (Hacker News, HuggingFace
+daily papers, GitHub recent AI repos — all public, no auth). Use this pattern
+for any single-shot LLM task until hardware is upgraded or Hermes is patched.
 
 ---
 
@@ -109,18 +111,24 @@ If anything is missing, see the **Recovery & Resilience** section of `CLAUDE.md`
 ### What works today (sovereign, non-agentic)
 
 ```bash
-# Run from WSL2 Ubuntu — generates today's Spanish AI briefing in ~1-9 min
+# Run from WSL2 Ubuntu — fetches sources + generates Spanish briefing in ~2-3 min warm
 wsl -d Ubuntu -u daniel -- python3 /mnt/c/Users/Daniel\ Amer/henko-sys-x01/modules/intel/generate-briefing.py
 
-# Pass an explicit date to backfill / replay
+# Pass an explicit date to backfill / replay (date_str validated; sources
+# anchored to 23:59 UTC of that day for HN+GitHub windows)
 ... generate-briefing.py 2026-04-25
 
+# Source-only smoke test (no LLM call) — useful for verifying APIs are reachable
+... fetch_sources.py [YYYY-MM-DD]
+
 # Output lands at /home/daniel/briefings/YYYY-MM-DD.md with YAML frontmatter
+# Frontmatter includes: web_access:true, sources_total:N, anchor_utc, throughput
 ```
 
 The script bypasses Hermes/Paperclip entirely and calls Ollama
-`/api/generate` with `qwen3:8b` directly. See § "Sovereign Direct Generation
-Pattern" in CLAUDE.md for why and how.
+`/api/generate` with `qwen3:8b` directly, with the prompt **grounded in real
+sources** fetched at runtime from public APIs. See § "Sovereign Direct
+Generation Pattern" in CLAUDE.md for why and how.
 
 ### Cron schedule (already installed)
 
@@ -144,16 +152,24 @@ resolved.** Use the script pattern for any single-shot work.
 
 ### Next-up tasks (when ready)
 
-1. **Web fetcher integration** — make briefing pull real news from Hacker News
-   API, HuggingFace daily papers, GitHub trending. Without this the model
-   hallucinates plausible-sounding but fictional content.
+1. ~~**Web fetcher integration**~~ — ✅ DONE 2026-04-26. `modules/intel/fetch_sources.py`
+   pulls from HN (Algolia), HuggingFace daily papers, and GitHub Search API.
+   Briefings are now grounded; verified zero hallucination on the run that
+   generated `briefings/2026-04-26.md`.
 
-2. **Phase 1c hardware reconciliation (issue #2)** — pick one of:
+2. **Disable Ollama auto-update** — 1 click in systray "Allow auto-updates"
+   (currently silently drifting hourly: 0.20.7 → 0.21.1 → 0.21.2 in two days).
+   No CLI/file path discovered; must be done from the Windows tray icon.
+
+3. **Phase 1c hardware reconciliation (issue #2)** — pick one of:
    - Hardware upgrade to 16+ GB VRAM
    - Patch Hermes to allow <64K ctx
    - Configure Hermes to use Ollama Cloud / Claude API
+   - Pull a smaller model (qwen3:4b, llama3.2:3b) and test if Hermes accepts it
 
-3. **Appwrite installation** for persistent knowledge graph + RAG over briefings.
+4. **Appwrite installation** for persistent knowledge graph + RAG over briefings.
+   The briefings already carry timezone-aware frontmatter
+   (`generated_at`, `sources_anchor_utc`, source counts) so they're RAG-ready.
 
 ### Hard prerequisites already met
 
@@ -176,8 +192,24 @@ resolved.** Use the script pattern for any single-shot work.
    to a WSL2/Linux process.
 5. **Use `curl.exe`, not Git Bash's `curl`,** for any localhost service —
    WSL2 mirrored networking confuses Git Bash's curl.
+6. **Ollama is single-slot per model (`Parallel:1`).** A second client's
+   request queues behind the first; client-side timeouts do NOT abort the
+   server-side work, so backlogged requests inherit the timeout. If your
+   call hangs at exactly your `--max-time`, suspect contention. To find
+   the noisy client: `Get-NetTCPConnection -RemotePort 11434 -State Established`
+   then look up the PID.
+7. **The first client of the day decides the model's loaded `KvSize`.**
+   Subsequent `num_ctx` requests are silently ignored — Ollama serves them
+   with the existing ctx, even if you ask for larger. Forcing a new ctx
+   requires a clean unload (POST `/api/generate` with `keep_alive:0`) or
+   full process restart.
+8. **DeerFlow gateway uvicorn (PID host process on :8001)** can enter a
+   loop hammering Ollama `/v1/chat/completions` every 12-52s. Killed on
+   2026-04-26 to unblock briefing generation. The Docker `deer-flow-gateway`
+   container is separate and was unaffected. If reappears, kill the host
+   process; if you actively need it, restart cleanly to break the loop.
 
-All five are detailed in `CLAUDE.md`.
+All eight are detailed in `CLAUDE.md`.
 
 ---
 
