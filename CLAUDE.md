@@ -378,6 +378,25 @@ tail -f /var/log/henko-paperclip.log # stdout from Paperclip
 MSYS_NO_PATHCONV=1 wsl -d Ubuntu -- bash \
   "/mnt/c/Users/Daniel Amer/henko-sys-x01/infrastructure/scripts/install-paperclip-systemd.sh"
 ```
+
+### Daily INTEL briefing — Windows Task Scheduler (preferred)
+The briefing fires at 07:00 daily via Windows Task Scheduler
+(`Henko-INTEL-DailyBriefing`), NOT via WSL cron. Task Scheduler boots
+WSL on demand and catches missed runs (`StartWhenAvailable=true`),
+which WSL's internal cron cannot do (WSL hibernates ~8s after the last
+process exits — no wake-on-cron).
+
+```powershell
+# Install / reinstall
+powershell -ExecutionPolicy Bypass -NoProfile `
+    -File infrastructure\scripts\install-task-scheduler.ps1
+
+# Run once on demand (verify wrapper still works)
+& "$env:LOCALAPPDATA\HenkoSysX01\run-intel-briefing.ps1"
+
+# Status
+Get-ScheduledTask -TaskName Henko-INTEL-DailyBriefing
+```
 - [ ] Appwrite instance (Phase 1b)
 - [ ] PostHog analytics (Phase 1b)
 - [ ] Dokploy self-hosted deploy (Phase 1b)

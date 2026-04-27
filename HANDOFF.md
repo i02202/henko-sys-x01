@@ -130,15 +130,33 @@ The script bypasses Hermes/Paperclip entirely and calls Ollama
 sources** fetched at runtime from public APIs. See § "Sovereign Direct
 Generation Pattern" in CLAUDE.md for why and how.
 
-### Cron schedule (already installed)
+### Daily schedule (Windows Task Scheduler — primary)
 
-The briefing runs daily at 07:00 local time via WSL crontab as user `daniel`.
-Check status:
+The briefing runs daily at 07:00 local time via Windows Task Scheduler
+(task name `Henko-INTEL-DailyBriefing`). Task Scheduler boots WSL on
+demand and uses `StartWhenAvailable` so a missed 07:00 (PC was off)
+fires the moment the machine wakes up. The wrapper that orchestrates
+this lives at `infrastructure/scripts/run-intel-briefing.ps1` (with a
+deployed copy at `%LOCALAPPDATA%\HenkoSysX01\run-intel-briefing.ps1`).
 
-```bash
-wsl -d Ubuntu -u daniel -- crontab -l
-wsl -d Ubuntu -u daniel -- tail /home/daniel/briefings/.cron.log
+```powershell
+# Status / next run
+Get-ScheduledTask -TaskName Henko-INTEL-DailyBriefing |
+    Select-Object TaskName, State,
+        @{N="NextRun";E={(Get-ScheduledTaskInfo -TaskName $_.TaskName).NextRunTime}}
+
+# Logs
+ls "$env:LOCALAPPDATA\HenkoSysX01\logs\"
+
+# Reinstall on a fresh machine / after wrapper edits
+powershell -ExecutionPolicy Bypass -NoProfile `
+    -File infrastructure\scripts\install-task-scheduler.ps1
 ```
+
+The WSL-internal cron entry is **disabled** (commented out in the user
+crontab on 2026-04-27) because WSL2 hibernates within ~8s of last
+process exit and has no wake-on-cron — it would silently skip the
+briefing whenever Docker Desktop wasn't already running at 07:00.
 
 ### What does NOT work today (Hermes agentic path)
 
