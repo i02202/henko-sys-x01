@@ -29,6 +29,8 @@ import urllib.parse
 
 USER_AGENT = "henko-intel/0.1 (+https://github.com/i02202/henko-sys-x01)"
 HTTP_TIMEOUT_S = 30
+HTTP_RETRIES = 3       # Per-source: total attempts including first try.
+HTTP_RETRY_BACKOFF_S = 5  # Sleep between retries (linear backoff: 5s, 10s, 15s).
 
 # AI-relevance keyword filter. Lowercase, substring match.
 # Tunable: add Spanish-relevant terms, trading-AI niches, specific lab names.
@@ -49,40 +51,74 @@ AI_KEYWORDS: tuple[str, ...] = (
 )
 
 
-def _http_get_json(url: str, timeout_s: int = HTTP_TIMEOUT_S) -> object | None:
-    """GET JSON via curl subprocess. Returns parsed JSON or None on failure.
+import time as _time
+
+
+# curl exit codes that are worth retrying — transient network problems where
+# a brief wait may let connectivity recover (DNS, route flap, server 5xx).
+# Codes that mean "the request was malformed" (e.g. 22 for HTTP 4xx) are
+# NOT retried because retrying won't help.
+_RETRIABLE_CURL_EXITS = {
+    6,   # Couldn't resolve host (DNS hiccup, VPN reconfig)
+    7,   # Failed to connect (route flap, VPN handover)
+    28,  # Operation timeout
+    35,  # SSL connect error (transient TLS)
+    52,  # Empty reply from server
+    56,  # Failure receiving network data
+}
+
+
+def _http_get_json(
+    url: str,
+    timeout_s: int = HTTP_TIMEOUT_S,
+    retries: int = HTTP_RETRIES,
+) -> object | None:
+    """GET JSON via curl subprocess with bounded retries.
 
     Uses curl --fail-with-body so HTTP 4xx/5xx returns non-zero exit code
     AND keeps the response body in stdout (useful for debugging API errors
     like "rate limit exceeded" or "invalid query").
+
+    Retries only on transient network errors (DNS, connection, timeout).
+    Auth/4xx/parse errors fail-fast — no point retrying those.
+
+    The retry loop matters in practice on this host: WSL2 mirrored
+    networking can briefly lose external routing when the user's VPN
+    (e.g. ProtonVPN/WireGuard) handovers between exit nodes. A 5s sleep
+    is usually enough to clear the blip.
     """
-    try:
-        proc = subprocess.run(
-            [
-                "curl", "--silent", "--show-error", "--fail-with-body",
-                "--max-time", str(timeout_s),
-                "-A", USER_AGENT,
-                "-H", "Accept: application/json",
-                url,
-            ],
-            capture_output=True, text=True, timeout=timeout_s + 10,
-        )
-        if proc.returncode != 0:
-            # Show both stderr (curl-side) and a snippet of stdout (server response body).
+    last_err = "unknown"
+    for attempt in range(1, retries + 1):
+        try:
+            proc = subprocess.run(
+                [
+                    "curl", "--silent", "--show-error", "--fail-with-body",
+                    "--max-time", str(timeout_s),
+                    "-A", USER_AGENT,
+                    "-H", "Accept: application/json",
+                    url,
+                ],
+                capture_output=True, text=True, timeout=timeout_s + 10,
+            )
+            if proc.returncode == 0 and proc.stdout.strip():
+                return json.loads(proc.stdout)
             err = proc.stderr.strip()[:120]
-            body_snippet = proc.stdout.strip()[:200].replace("\n", " ")
-            print(f"  ! HTTP fail {url}: exit={proc.returncode} stderr='{err}' body='{body_snippet}'", flush=True)
-            return None
-        if not proc.stdout.strip():
-            print(f"  ! Empty body from {url}", flush=True)
-            return None
-        return json.loads(proc.stdout)
-    except subprocess.TimeoutExpired:
-        print(f"  ! Timeout {url}", flush=True)
-        return None
-    except json.JSONDecodeError as e:
-        print(f"  ! Bad JSON from {url}: {e}", flush=True)
-        return None
+            body = proc.stdout.strip()[:200].replace("\n", " ")
+            last_err = f"exit={proc.returncode} stderr='{err}' body='{body}'"
+            # Only retry transient network problems.
+            if proc.returncode not in _RETRIABLE_CURL_EXITS:
+                break
+        except subprocess.TimeoutExpired:
+            last_err = "subprocess timeout"
+        except json.JSONDecodeError as e:
+            last_err = f"bad JSON: {e}"
+            break  # Server returned 200 but garbage; retrying won't help.
+        if attempt < retries:
+            sleep_s = HTTP_RETRY_BACKOFF_S * attempt
+            print(f"  ~ retry {attempt}/{retries - 1} for {url} in {sleep_s}s ({last_err[:80]})", flush=True)
+            _time.sleep(sleep_s)
+    print(f"  ! HTTP fail {url}: {last_err}", flush=True)
+    return None
 
 
 _AI_KEYWORD_REGEX = re.compile(

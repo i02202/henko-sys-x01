@@ -130,14 +130,13 @@ The script bypasses Hermes/Paperclip entirely and calls Ollama
 sources** fetched at runtime from public APIs. See § "Sovereign Direct
 Generation Pattern" in CLAUDE.md for why and how.
 
-### Daily schedule (Windows Task Scheduler — primary)
+### Daily schedule (Windows Task Scheduler, primary)
 
 The briefing runs daily at 07:00 local time via Windows Task Scheduler
-(task name `Henko-INTEL-DailyBriefing`). Task Scheduler boots WSL on
-demand and uses `StartWhenAvailable` so a missed 07:00 (PC was off)
-fires the moment the machine wakes up. The wrapper that orchestrates
-this lives at `infrastructure/scripts/run-intel-briefing.ps1` (with a
-deployed copy at `%LOCALAPPDATA%\HenkoSysX01\run-intel-briefing.ps1`).
+(task name `Henko-INTEL-DailyBriefing`). Task Scheduler invokes
+`wsl.exe` directly with the briefing script as argument and uses
+`StartWhenAvailable` so a missed 07:00 (PC was off) fires the moment
+the machine wakes up.
 
 ```powershell
 # Status / next run
@@ -145,18 +144,23 @@ Get-ScheduledTask -TaskName Henko-INTEL-DailyBriefing |
     Select-Object TaskName, State,
         @{N="NextRun";E={(Get-ScheduledTaskInfo -TaskName $_.TaskName).NextRunTime}}
 
-# Logs
-ls "$env:LOCALAPPDATA\HenkoSysX01\logs\"
-
-# Reinstall on a fresh machine / after wrapper edits
+# Reinstall on a fresh machine
 powershell -ExecutionPolicy Bypass -NoProfile `
     -File infrastructure\scripts\install-task-scheduler.ps1
 ```
 
 The WSL-internal cron entry is **disabled** (commented out in the user
 crontab on 2026-04-27) because WSL2 hibernates within ~8s of last
-process exit and has no wake-on-cron — it would silently skip the
+process exit and has no wake-on-cron - it would silently skip the
 briefing whenever Docker Desktop wasn't already running at 07:00.
+
+**Note (2026-04-28):** the previous design used a PowerShell wrapper
+script for per-run logging. It failed under PS 5.1 (which is what
+Task Scheduler invokes by default) due to a UTF-8-without-BOM em-dash
+in the wrapper's comments: PS 5.1's cp1252 parser corrupted the file
+and exited with `0xFFFD0000` before writing any log line. The wrapper
+is gone. Task Scheduler now calls `wsl.exe` directly. Briefing success
+is observable via the briefing file itself + the dashboard.
 
 ### What does NOT work today (Hermes agentic path)
 
@@ -226,8 +230,20 @@ resolved.** Use the script pattern for any single-shot work.
    2026-04-26 to unblock briefing generation. The Docker `deer-flow-gateway`
    container is separate and was unaffected. If reappears, kill the host
    process; if you actively need it, restart cleanly to break the loop.
+9. **WireGuard VPNs (e.g. ProtonVPN) break WSL2 mirrored networking.**
+   Symptom: WSL has DNS resolution but `curl` to any external host fails
+   with "No route to host" / `curl: (7) Failed to connect`. Windows host
+   itself stays online (test with `Test-NetConnection api.github.com -Port 443`).
+   Root cause: mirrored networking ignores the WireGuard TUN interface,
+   so WSL ends up routing through a default gateway that no longer has
+   external connectivity. The fetch_sources.py script now retries 3x
+   with 5s/10s backoff so brief VPN handovers don't kill the briefing,
+   but a sustained VPN session WILL block fetches. Workaround options:
+   (a) configure VPN split-tunnel to exclude WSL traffic, (b) disable
+   VPN at 07:00 while the cron fires, (c) switch WSL to NAT mode
+   (changes other things — see CLAUDE.md "Hardware Verified" section).
 
-All eight are detailed in `CLAUDE.md`.
+All nine are detailed in `CLAUDE.md`.
 
 ---
 

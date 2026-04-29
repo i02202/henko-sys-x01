@@ -135,6 +135,37 @@ With WSL2 mirrored networking, Git Bash's `curl` may fail to reach `localhost` D
 Pre-existing projects (ftpa-expert on :3000, worldstation on :3100) use these ports.
 **Fix:** DeerFlow uses :2026 via nginx. Future Henko services should avoid :3000 and :3100.
 
+### WireGuard VPN breaks WSL2 mirrored networking (2026-04-28)
+ProtonVPN (and any WireGuard-based VPN) breaks external network access
+from WSL2 when mirrored networking is enabled (`networkingMode=mirrored`
+in `~/.wslconfig`). Symptom from inside WSL:
+```
+$ curl -v https://api.github.com
+* Host api.github.com:443 was resolved.
+* IPv4: 140.82.114.5
+* connect to 140.82.114.5 port 443 from 192.168.86.45 failed: No route to host
+```
+DNS resolves but TCP connect fails. Windows host stays online (test:
+`Test-NetConnection api.github.com -Port 443`). Root cause: mirrored
+networking driver does not pick up the WireGuard TUN interface, so
+WSL ends up with a stale default route via the original physical
+adapter, which no longer reaches the internet because Windows now
+routes everything through the WireGuard tunnel.
+
+**Detection:** if `fetch_sources.py` reports all 0 items with
+`curl: (7) Failed to connect`, suspect this. The script now retries
+3x with 5s/10s backoff so brief blips don't kill briefings, but a
+sustained VPN session WILL block fetches.
+
+**Workarounds:**
+1. Configure VPN split-tunnel to exclude WSL traffic.
+2. Disable VPN at the cron window (manual).
+3. Switch WSL to NAT mode: edit `~/.wslconfig` to remove the
+   `networkingMode=mirrored` line, then `wsl --shutdown`. NAT mode
+   uses its own NAT'd subnet that routes via the host normally,
+   immune to WireGuard interaction. Trade-off: localhost forwarding
+   between Windows host and WSL containers becomes manual.
+
 ## Tech Stack
 | Layer | Technology | License |
 |-------|-----------|---------|
@@ -381,9 +412,10 @@ MSYS_NO_PATHCONV=1 wsl -d Ubuntu -- bash \
 
 ### Daily INTEL briefing — Windows Task Scheduler (preferred)
 The briefing fires at 07:00 daily via Windows Task Scheduler
-(`Henko-INTEL-DailyBriefing`), NOT via WSL cron. Task Scheduler boots
-WSL on demand and catches missed runs (`StartWhenAvailable=true`),
-which WSL's internal cron cannot do (WSL hibernates ~8s after the last
+(`Henko-INTEL-DailyBriefing`), NOT via WSL cron. Task Scheduler invokes
+`wsl.exe` DIRECTLY (no PowerShell wrapper) with the briefing script as
+argument and uses `StartWhenAvailable=true` to catch missed runs, which
+WSL's internal cron cannot do (WSL hibernates ~8s after the last
 process exits — no wake-on-cron).
 
 ```powershell
@@ -391,12 +423,22 @@ process exits — no wake-on-cron).
 powershell -ExecutionPolicy Bypass -NoProfile `
     -File infrastructure\scripts\install-task-scheduler.ps1
 
-# Run once on demand (verify wrapper still works)
-& "$env:LOCALAPPDATA\HenkoSysX01\run-intel-briefing.ps1"
+# Run once on demand (verify pipeline)
+wsl.exe -d Ubuntu -u daniel -- /usr/bin/python3 `
+    "/mnt/c/Users/Daniel Amer/henko-sys-x01/modules/intel/generate-briefing.py"
 
 # Status
 Get-ScheduledTask -TaskName Henko-INTEL-DailyBriefing
 ```
+
+**Lesson learned 2026-04-28**: do NOT use a PowerShell wrapper script
+for Task Scheduler actions on Windows. Task Scheduler's default
+PowerShell is `powershell.exe` (5.1, ANSI/cp1252 by default), which
+chokes on UTF-8-without-BOM scripts that contain ANY non-ASCII char
+(em-dashes, smart quotes, etc.) and exits with `0xFFFD0000` before
+the wrapper even reaches its first log line. Symptom: task shows
+LastResult `0xFFFD0000`, no log file created, task duration ~7-30s.
+The fix is to invoke wsl.exe / cmd.exe / native binaries directly.
 - [ ] Appwrite instance (Phase 1b)
 - [ ] PostHog analytics (Phase 1b)
 - [ ] Dokploy self-hosted deploy (Phase 1b)
